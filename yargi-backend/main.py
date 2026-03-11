@@ -205,6 +205,22 @@ async def search(req: SearchRequest):
 async def health():
     return {"status": "ok", "claude": bool(ANTHROPIC_API_KEY)}
 
+@app.get("/debug/yargitay")
+async def debug_yargitay():
+    """Yargıtay sitesine erişim var mı test et"""
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get("https://karararama.yargitay.gov.tr/")
+            cookies = dict(client.cookies)
+            return {
+                "status": resp.status_code,
+                "cookies": cookies,
+                "headers": dict(resp.headers),
+                "body_preview": resp.text[:200]
+            }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
 # Frontend
 if os.path.exists("static"):
     app.mount("/", StaticFiles(directory="static", html=True), name="static")
