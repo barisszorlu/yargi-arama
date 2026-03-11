@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import httpx
 import anthropic
@@ -20,138 +19,145 @@ app.add_middleware(
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "tr,en;q=0.9",
+    "Content-Type": "application/json; charset=UTF-8",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin": "https://karararama.yargitay.gov.tr",
+    "Referer": "https://karararama.yargitay.gov.tr/",
+}
+
 # ── Request modelleri ──────────────────────────────────────────
 class SearchRequest(BaseModel):
     query: str
-    court: str = "yargitay"   # yargitay | danistay | emsal
+    court: str = "yargitay"
     page: int = 1
     page_size: int = 10
 
-class SummarizeRequest(BaseModel):
-    document_id: str
-    court: str = "yargitay"
-    title: str = ""
+# ── Session yönetimi: her istekte taze JSESSIONID al ──────────
+async def get_session_cookie(client: httpx.AsyncClient, base_url: str) -> str:
+    resp = await client.get(base_url, follow_redirects=True)
+    for cookie in client.cookies.jar:
+        if cookie.name == "JSESSIONID":
+            return cookie.value
+    # response cookie header'dan da dene
+    set_cookie = resp.headers.get("set-cookie", "")
+    if "JSESSIONID=" in set_cookie:
+        return set_cookie.split("JSESSIONID=")[1].split(";")[0]
+    return ""
 
-# ── Yargıtay API ───────────────────────────────────────────────
-async def search_yargitay(query: str, page: int = 1, page_size: int = 10):
-    url = "https://karararama.yargitay.gov.tr/YargitayBilgiBankasiIstemciWeb/servlet/YargitayBilgiBankasiIstemciServlet"
-    params = {
-        "aranan": query,
-        "mahkeme": "",
-        "daire": "",
-        "esasYil": "",
-        "esasNo": "",
-        "kararYil": "",
-        "kararNo": "",
-        "baslangicTarihi": "",
-        "bitisTarihi": "",
-        "siralama": "0",
-        "siralamaDirection": "0",
-        "pageSize": str(page_size),
-        "pageNumber": str(page),
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://karararama.yargitay.gov.tr/",
-    }
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, data=params, headers=headers)
+# ── Yargıtay ──────────────────────────────────────────────────
+async def search_yargitay(query: str, page: int, page_size: int) -> dict:
+    base = "https://karararama.yargitay.gov.tr"
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        # 1. Session cookie al
+        await get_session_cookie(client, base)
+
+        # 2. Arama yap
+        payload = {"data": {"aranan": query, "arananKelime": query,
+                             "pageSize": page_size, "pageNumber": page}}
+        resp = await client.post(f"{base}/aramalist", json=payload, headers=HEADERS)
         resp.raise_for_status()
         return resp.json()
 
-# ── Danıştay API ───────────────────────────────────────────────
-async def search_danistay(query: str, page: int = 1, page_size: int = 10):
-    url = "https://karararama.danistay.gov.tr/DanistayBilgiBankasiIstemciWeb/servlet/DanistayBilgiBankasiIstemciServlet"
-    params = {
-        "aranan": query,
-        "daire": "",
-        "esasYil": "",
-        "esasNo": "",
-        "kararYil": "",
-        "kararNo": "",
-        "baslangicTarihi": "",
-        "bitisTarihi": "",
-        "siralama": "0",
-        "siralamaDirection": "0",
-        "pageSize": str(page_size),
-        "pageNumber": str(page),
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://karararama.danistay.gov.tr/",
-    }
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, data=params, headers=headers)
+# ── Danıştay ──────────────────────────────────────────────────
+async def search_danistay(query: str, page: int, page_size: int) -> dict:
+    base = "https://karararama.danistay.gov.tr"
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        await get_session_cookie(client, base)
+        payload = {"data": {"aranan": query, "arananKelime": query,
+                             "pageSize": page_size, "pageNumber": page}}
+        resp = await client.post(f"{base}/aramalist", json=payload, headers={
+            **HEADERS,
+            "Origin": base,
+            "Referer": base + "/",
+        })
         resp.raise_for_status()
         return resp.json()
 
-# ── Emsal (UYAP) API ───────────────────────────────────────────
-async def search_emsal(query: str, page: int = 1, page_size: int = 10):
-    url = "https://emsal.uyap.gov.tr/BilgiBankasiIstemciWeb/servlet/BilgiBankasiIstemciServlet"
-    params = {
-        "aranan": query,
-        "mahkeme": "",
-        "daire": "",
-        "pageSize": str(page_size),
-        "pageNumber": str(page),
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://emsal.uyap.gov.tr/",
-    }
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, data=params, headers=headers)
+# ── Emsal (UYAP) ───────────────────────────────────────────────
+async def search_emsal(query: str, page: int, page_size: int) -> dict:
+    base = "https://emsal.uyap.gov.tr"
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        await get_session_cookie(client, base)
+        payload = {"data": {"aranan": query, "arananKelime": query,
+                             "pageSize": page_size, "pageNumber": page}}
+        resp = await client.post(f"{base}/aramalist", json=payload, headers={
+            **HEADERS,
+            "Origin": base,
+            "Referer": base + "/",
+        })
         resp.raise_for_status()
         return resp.json()
 
-# ── Claude ile özetle ──────────────────────────────────────────
-def summarize_with_claude(results_json: dict, query: str, court_label: str) -> list:
-    """Ham API sonuçlarını Claude ile işleyip temizlenmiş liste döndür"""
-    if not ANTHROPIC_API_KEY:
-        # API key yoksa ham veriyi döndür
-        return raw_parse(results_json, court_label)
-
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    prompt = (
-        "Aşağıdaki Türk mahkeme kararı arama sonuçlarını analiz et.\n"
-        f"Aranan konu: '{query}'\nMahkeme: {court_label}\n\n"
-        "Ham veri:\n" + json.dumps(results_json, ensure_ascii=False)[:4000] + "\n\n"
-        "Her karar için şu JSON array formatında döndür (başka hiçbir şey yazma):\n"
-        '[{"id":"...","title":"kararın konusu","court":"daire adı","date":"YYYY-MM-DD",'
-        '"caseNo":"E. XXXX/XXXX K. XXXX/XXXX","summary":"2-3 cümle özet","relevance":"bu arama ile ilgisi"}]'
-    )
-
-    msg = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    text = msg.content[0].text.replace("```json", "").replace("```", "").strip()
-    return json.loads(text)
-
-def raw_parse(data: dict, court_label: str) -> list:
-    """Claude yoksa ham API verisini basitçe parse et"""
-    results = []
-    items = data.get("data", data.get("kararlar", data.get("results", [])))
+# ── Sonuçları parse et ────────────────────────────────────────
+def parse_results(raw: dict, court_label: str) -> list:
+    """API'den gelen ham veriyi temizlenmiş listeye çevir"""
+    # Yargıtay API yanıt yapısı: {"data": [...]} veya direkt liste
+    items = []
+    data = raw.get("data", raw)
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = data.get("data", data.get("kararlar", data.get("belgeler", [])))
     if not isinstance(items, list):
         items = []
-    for item in items[:20]:
+
+    results = []
+    for item in items:
+        doc_id = str(item.get("id", item.get("belgeId", item.get("kararId", ""))))
+        daire = item.get("birimAdi", item.get("daire", court_label))
+        esas = item.get("esasNo", item.get("esas", ""))
+        karar = item.get("kararNo", item.get("karar", ""))
+        tarih = item.get("kararTarihi", item.get("tarih", ""))
+        ozet = item.get("kararOzeti", item.get("ozet", item.get("icerik", "")))
+        if isinstance(ozet, str):
+            ozet = ozet[:500]
+
         results.append({
-            "id": str(item.get("id", item.get("kararId", ""))),
-            "title": item.get("kararOzeti", item.get("icerik", "")[:100]),
-            "court": item.get("birimAdi", court_label),
-            "date": item.get("kararTarihi", ""),
-            "caseNo": f"E. {item.get('esasNo', '')} K. {item.get('kararNo', '')}",
-            "summary": item.get("kararOzeti", item.get("icerik", ""))[:300],
+            "id": doc_id,
+            "title": ozet[:100] if ozet else f"{daire} Kararı",
+            "court": daire,
+            "date": tarih,
+            "caseNo": f"E. {esas} K. {karar}".strip(". ") if (esas or karar) else "",
+            "summary": ozet,
             "relevance": "",
         })
     return results
 
-# ── Endpoints ─────────────────────────────────────────────────
+# ── Claude ile özetle (opsiyonel) ─────────────────────────────
+def enrich_with_claude(results: list, query: str) -> list:
+    if not ANTHROPIC_API_KEY or not results:
+        return results
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        prompt = (
+            "Aşağıdaki Türk mahkeme kararı listesini analiz et. "
+            "Aranan konu: '" + query + "'\n\n"
+            "Her karar için 'relevance' alanına bu aramayla ilgisini 1 cümleyle yaz. "
+            "Eğer özet eksikse kısa bir başlık öner. "
+            "JSON array olarak döndür, her obje şu alanları içersin: id, title, court, date, caseNo, summary, relevance\n\n"
+            "Veri:\n" + json.dumps(results[:10], ensure_ascii=False)
+        )
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        text = msg.content[0].text.replace("```json", "").replace("```", "").strip()
+        # JSON array bul
+        start = text.find("[")
+        end = text.rfind("]") + 1
+        if start >= 0 and end > start:
+            enriched = json.loads(text[start:end])
+            return enriched
+    except Exception:
+        pass
+    return results
+
+# ── Ana endpoint ───────────────────────────────────────────────
 @app.post("/api/search")
 async def search(req: SearchRequest):
     court_labels = {
@@ -171,8 +177,15 @@ async def search(req: SearchRequest):
         else:
             raise HTTPException(status_code=400, detail="Geçersiz mahkeme")
 
-        results = summarize_with_claude(raw, req.query, court_label)
-        total = raw.get("totalCount", raw.get("toplamKayit", len(results)))
+        results = parse_results(raw, court_label)
+        results = enrich_with_claude(results, req.query)
+
+        # Toplam sayı
+        data = raw.get("data", raw)
+        if isinstance(data, dict):
+            total = data.get("total", data.get("toplamKayit", data.get("totalCount", len(results))))
+        else:
+            total = len(results)
 
         return {
             "results": results,
@@ -181,8 +194,10 @@ async def search(req: SearchRequest):
             "query": req.query,
         }
 
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Mahkeme API hatası: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Mahkeme API hatası: {e.response.status_code} {e.response.text[:200]}")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Bağlantı hatası: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -190,6 +205,6 @@ async def search(req: SearchRequest):
 async def health():
     return {"status": "ok", "claude": bool(ANTHROPIC_API_KEY)}
 
-# Frontend statik dosyaları sun (opsiyonel)
+# Frontend
 if os.path.exists("static"):
     app.mount("/", StaticFiles(directory="static", html=True), name="static")
