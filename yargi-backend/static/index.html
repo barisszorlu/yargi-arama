@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yargı Arama</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#1a1a1a;--paper:#f5f0e8;--cream:#ede8d8;--accent:#8b1a1a;--muted:#6b6356;--border:#c8bfaa;--card:#faf7f0; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;min-height:100vh}
+  header{border-bottom:2px solid var(--ink);padding:0 2rem;display:flex;align-items:stretch;justify-content:space-between}
+  .logo-area{padding:1.2rem 2rem 1.2rem 0;border-right:1px solid var(--border);margin-right:2rem}
+  .logo{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;line-height:1}
+  .logo span{color:var(--accent)}
+  .tagline{font-size:.65rem;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;margin-top:4px;font-family:'IBM Plex Mono',monospace}
+  .header-meta{display:flex;align-items:center;gap:2rem;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block;margin-right:6px}
+  main{max-width:900px;margin:0 auto;padding:3rem 2rem}
+  .section-label{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:.8rem}
+  .search-row{display:flex;border:2px solid var(--ink);background:white;margin-bottom:.8rem}
+  .search-input{flex:1;border:none;outline:none;padding:1rem 1.2rem;font-family:'IBM Plex Sans',sans-serif;font-size:1rem;background:transparent}
+  .search-input::placeholder{color:var(--muted);opacity:.6}
+  .search-btn{background:var(--ink);color:var(--paper);border:none;padding:1rem 1.8rem;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;transition:background .15s;white-space:nowrap}
+  .search-btn:hover{background:var(--accent)}
+  .search-btn:disabled{opacity:.5;cursor:not-allowed}
+  .filters{display:flex;gap:1rem;flex-wrap:wrap}
+  .filter-group{display:flex;align-items:center;gap:.5rem}
+  .filter-label{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .filter-select{border:1px solid var(--border);background:var(--cream);padding:.35rem .6rem;font-family:'IBM Plex Sans',sans-serif;font-size:.8rem;color:var(--ink);cursor:pointer;outline:none}
+  .status-bar{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:var(--muted);margin:1.2rem 0;display:flex;align-items:center;gap:.5rem;min-height:1.2rem}
+  .status-bar.loading{color:var(--accent)}
+  .status-bar.error{color:#c00}
+  .spinner{display:inline-block;width:10px;height:10px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .results-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1.2rem;padding-bottom:.8rem;border-bottom:1px solid var(--border)}
+  .results-count{font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:600}
+  .results-count span{color:var(--accent);font-size:1.4rem}
+  .results-meta{font-family:'IBM Plex Mono',monospace;font-size:.65rem;color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--ink);margin-bottom:1px;cursor:pointer;transition:border-left-color .15s,background .15s}
+  .card:hover{border-left-color:var(--accent);background:white}
+  .card.expanded{border-left-color:var(--accent);background:white}
+  .card-header{padding:1rem 1.2rem;display:flex;align-items:flex-start;gap:1rem}
+  .card-num{font-family:'IBM Plex Mono',monospace;font-size:.65rem;color:var(--muted);min-width:20px;padding-top:2px}
+  .card-content{flex:1}
+  .card-title{font-family:'Playfair Display',serif;font-size:.95rem;font-weight:600;margin-bottom:.4rem;line-height:1.4}
+  .card-meta{display:flex;gap:1.2rem;flex-wrap:wrap}
+  .meta-item{font-family:'IBM Plex Mono',monospace;font-size:.65rem;color:var(--muted)}
+  .meta-item strong{color:var(--ink);font-weight:500}
+  .card-arrow{font-size:.8rem;color:var(--muted);transition:transform .2s;padding-top:2px}
+  .card.expanded .card-arrow{transform:rotate(90deg);color:var(--accent)}
+  .card-body{display:none;padding:0 1.2rem 1.2rem 3rem;border-top:1px solid var(--cream)}
+  .card.expanded .card-body{display:block}
+  .decision-text{font-family:'IBM Plex Sans',sans-serif;font-size:.85rem;line-height:1.7;margin-top:.8rem;white-space:pre-wrap;max-height:400px;overflow-y:auto}
+  .relevance-badge{display:inline-block;background:var(--cream);border:1px solid var(--border);padding:2px 8px;font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);margin-top:.6rem}
+  .card-actions{display:flex;gap:.8rem;margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--cream)}
+  .btn-small{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;padding:.4rem .8rem;border:1px solid var(--border);background:transparent;cursor:pointer;color:var(--muted);transition:all .15s}
+  .btn-small:hover{border-color:var(--ink);color:var(--ink)}
+  .empty-state{text-align:center;padding:4rem 2rem;color:var(--muted)}
+  .empty-state .big-char{font-family:'Playfair Display',serif;font-size:5rem;color:var(--border);line-height:1;margin-bottom:1rem}
+  .empty-state p{font-family:'IBM Plex Mono',monospace;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase}
+  footer{border-top:1px solid var(--border);padding:1rem 2rem;display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+  @media(max-width:600px){header{flex-direction:column;padding:1rem}.logo-area{border-right:none;border-bottom:1px solid var(--border);padding-right:0;margin-right:0;padding-bottom:.8rem;margin-bottom:.8rem}main{padding:1.5rem 1rem}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo-area">
+    <div class="logo">Yargı<span>.</span>arama</div>
+    <div class="tagline">Türk Mahkeme Kararları</div>
+  </div>
+  <div class="header-meta">
+    <div><span class="dot"></span>Yargıtay</div>
+    <div><span class="dot"></span>Danıştay</div>
+    <div><span class="dot"></span>Emsal</div>
+  </div>
+</header>
+<main>
+  <div style="margin-bottom:2rem">
+    <div class="section-label">Karar Ara</div>
+    <div class="search-row">
+      <input type="text" class="search-input" id="searchInput" placeholder="örn: işçinin haklı fesih hakkı, kira artışı sınırı, nafaka hesabı..." />
+      <button class="search-btn" id="searchBtn" onclick="doSearch()">Ara →</button>
+    </div>
+    <div class="filters">
+      <div class="filter-group">
+        <span class="filter-label">Mahkeme</span>
+        <select class="filter-select" id="courtFilter">
+          <option value="yargitay">Yargıtay</option>
+          <option value="danistay">Danıştay</option>
+          <option value="emsal">Emsal (UYAP)</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Sonuç</span>
+        <select class="filter-select" id="countFilter">
+          <option value="5">5 karar</option>
+          <option value="10" selected>10 karar</option>
+          <option value="20">20 karar</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="status-bar" id="statusBar"></div>
+  <div id="resultsArea">
+    <div class="empty-state"><div class="big-char">§</div><p>Aramak istediğiniz konuyu yazın</p></div>
+  </div>
+</main>
+<footer>
+  <span>Kaynak: Yargıtay · Danıştay · UYAP Resmi API</span>
+  <span>Berkay için ♦</span>
+</footer>
+<script>
+  const API_BASE = window.location.origin;
+  let searchResults = [];
+  document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+
+  function setStatus(msg, type='') {
+    const bar = document.getElementById('statusBar');
+    bar.className = 'status-bar ' + type;
+    bar.innerHTML = type==='loading' ? '<span class="spinner"></span> '+msg : msg;
+  }
+
+  async function doSearch() {
+    const query = document.getElementById('searchInput').value.trim();
+    const court = document.getElementById('courtFilter').value;
+    const pageSize = parseInt(document.getElementById('countFilter').value);
+    if(!query) { setStatus('Lütfen bir arama terimi girin.','error'); return; }
+    const btn = document.getElementById('searchBtn');
+    btn.disabled = true;
+    setStatus('Kararlar aranıyor...','loading');
+    document.getElementById('resultsArea').innerHTML = '';
+    searchResults = [];
+    try {
+      const resp = await fetch(API_BASE+'/api/search', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({query, court, page:1, page_size:pageSize})
+      });
+      if(!resp.ok) { const e=await resp.json(); throw new Error(e.detail||'Sunucu hatası'); }
+      const data = await resp.json();
+      searchResults = data.results || [];
+      setStatus((data.totalFound||searchResults.length).toLocaleString('tr')+' karar bulundu — "'+query+'"');
+      renderResults(searchResults, query);
+    } catch(err) {
+      setStatus('Hata: '+err.message,'error');
+      document.getElementById('resultsArea').innerHTML = '<div class="empty-state"><div class="big-char">!</div><p>'+err.message+'</p></div>';
+    } finally { btn.disabled=false; }
+  }
+
+  function renderResults(results, query) {
+    if(!results.length) { document.getElementById('resultsArea').innerHTML='<div class="empty-state"><div class="big-char">∅</div><p>Sonuç bulunamadı</p></div>'; return; }
+    let html = '<div class="results-header"><div class="results-count"><span>'+results.length+'</span> karar listelendi</div><div class="results-meta">"'+query+'"</div></div>';
+    results.forEach((r,i) => {
+      html += '<div class="card" id="card-'+i+'" onclick="toggleCard('+i+')">' +
+        '<div class="card-header"><div class="card-num">'+String(i+1).padStart(2,'0')+'</div>' +
+        '<div class="card-content"><div class="card-title">'+(r.title||'Karar')+'</div>' +
+        '<div class="card-meta"><span class="meta-item"><strong>'+(r.court||'')+'</strong></span>' +
+        '<span class="meta-item">'+(r.date||'')+'</span>' +
+        '<span class="meta-item">'+(r.caseNo||'')+'</span></div></div>' +
+        '<div class="card-arrow">▶</div></div>' +
+        '<div class="card-body"><div class="decision-text">'+(r.summary||'')+'</div>' +
+        (r.relevance?'<div class="relevance-badge">İlgi: '+r.relevance+'</div>':'') +
+        '<div class="card-actions"><button class="btn-small" onclick="copyCard(event,'+i+')">Kopyala</button></div>' +
+        '</div></div>';
+    });
+    document.getElementById('resultsArea').innerHTML = html;
+  }
+
+  function toggleCard(i) { document.getElementById('card-'+i).classList.toggle('expanded'); }
+  function copyCard(e,i) {
+    e.stopPropagation();
+    const r=searchResults[i];
+    navigator.clipboard.writeText(r.court+'\n'+r.caseNo+' — '+r.date+'\n\n'+r.title+'\n\n'+r.summary)
+      .then(()=>{ e.target.textContent='✓ Kopyalandı'; setTimeout(()=>e.target.textContent='Kopyala',2000); });
+  }
+</script>
+</body>
+</html>
